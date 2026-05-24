@@ -132,34 +132,53 @@ void GCS_MAVLINK_Copter::send_position_target_local_ned()
     case ModeGuided::SubMode::WP:
     case ModeGuided::SubMode::Pos:
         type_mask = POSITION_TARGET_TYPEMASK_VX_IGNORE | POSITION_TARGET_TYPEMASK_VY_IGNORE | POSITION_TARGET_TYPEMASK_VZ_IGNORE |
-                    POSITION_TARGET_TYPEMASK_AX_IGNORE | POSITION_TARGET_TYPEMASK_AY_IGNORE | POSITION_TARGET_TYPEMASK_AZ_IGNORE |
-                    POSITION_TARGET_TYPEMASK_YAW_IGNORE| POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE; // ignore everything except position
+                    POSITION_TARGET_TYPEMASK_AX_IGNORE | POSITION_TARGET_TYPEMASK_AY_IGNORE | POSITION_TARGET_TYPEMASK_AZ_IGNORE; // ignore everything except position
         target_pos_ned_m = copter.mode_guided.get_target_pos_NED_m().tofloat();
         break;
     case ModeGuided::SubMode::PosVelAccel:
-        type_mask = POSITION_TARGET_TYPEMASK_YAW_IGNORE| POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE; // ignore everything except position, velocity & acceleration
+        // ignore nothing except yaw (handled below): position, velocity & acceleration are all valid
         target_pos_ned_m = copter.mode_guided.get_target_pos_NED_m().tofloat();
         target_vel_ned_ms = copter.mode_guided.get_target_vel_NED_ms();
         target_accel_ned_mss = copter.mode_guided.get_target_accel_NED_mss();
         break;
     case ModeGuided::SubMode::VelAccel:
-        type_mask = POSITION_TARGET_TYPEMASK_X_IGNORE | POSITION_TARGET_TYPEMASK_Y_IGNORE | POSITION_TARGET_TYPEMASK_Z_IGNORE |
-                    POSITION_TARGET_TYPEMASK_YAW_IGNORE| POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE; // ignore everything except velocity & acceleration
+        type_mask = POSITION_TARGET_TYPEMASK_X_IGNORE | POSITION_TARGET_TYPEMASK_Y_IGNORE | POSITION_TARGET_TYPEMASK_Z_IGNORE; // ignore everything except velocity & acceleration
         target_vel_ned_ms = copter.mode_guided.get_target_vel_NED_ms();
         target_accel_ned_mss = copter.mode_guided.get_target_accel_NED_mss();
         break;
     case ModeGuided::SubMode::Accel:
         type_mask = POSITION_TARGET_TYPEMASK_X_IGNORE | POSITION_TARGET_TYPEMASK_Y_IGNORE | POSITION_TARGET_TYPEMASK_Z_IGNORE |
-                    POSITION_TARGET_TYPEMASK_VX_IGNORE | POSITION_TARGET_TYPEMASK_VY_IGNORE | POSITION_TARGET_TYPEMASK_VZ_IGNORE |
-                    POSITION_TARGET_TYPEMASK_YAW_IGNORE| POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE; // ignore everything except velocity & acceleration
+                    POSITION_TARGET_TYPEMASK_VX_IGNORE | POSITION_TARGET_TYPEMASK_VY_IGNORE | POSITION_TARGET_TYPEMASK_VZ_IGNORE; // ignore everything except acceleration
         target_accel_ned_mss = copter.mode_guided.get_target_accel_NED_mss();
+        break;
+    }
+
+    // report the yaw / yaw-rate currently being commanded by the AutoYaw
+    // controller rather than always reporting zero (issue #13932)
+    const AC_AttitudeControl::HeadingCommand heading = copter.mode_guided.auto_yaw.get_reported_heading();
+    float yaw_rad = 0.0f;
+    float yaw_rate_rads = 0.0f;
+    switch (heading.heading_mode) {
+    case AC_AttitudeControl::HeadingMode::Angle_Only:
+        yaw_rad = heading.yaw_angle_rad;
+        type_mask |= POSITION_TARGET_TYPEMASK_YAW_RATE_IGNORE;
+        break;
+    case AC_AttitudeControl::HeadingMode::Angle_And_Rate:
+        yaw_rad = heading.yaw_angle_rad;
+        yaw_rate_rads = heading.yaw_rate_rads;
+        break;
+    case AC_AttitudeControl::HeadingMode::Rate_Only:
+        yaw_rate_rads = heading.yaw_rate_rads;
+        type_mask |= POSITION_TARGET_TYPEMASK_YAW_IGNORE;
         break;
     }
 
     mavlink_msg_position_target_local_ned_send(
         chan,
         AP_HAL::millis(), // time boot ms
-        MAV_FRAME_LOCAL_NED, 
+        // the reported targets are always converted to earth-frame NED, so the
+        // frame is LOCAL_NED regardless of the frame used in the original request
+        MAV_FRAME_LOCAL_NED,
         type_mask,
         target_pos_ned_m.x,     // x in metres
         target_pos_ned_m.y,     // y in metres
@@ -170,8 +189,8 @@ void GCS_MAVLINK_Copter::send_position_target_local_ned()
         target_accel_ned_mss.x, // afx in m/s/s
         target_accel_ned_mss.y, // afy in m/s/s
         target_accel_ned_mss.z, // afz in m/s/s NED frame
-        0.0f,                   // yaw
-        0.0f);                  // yaw_rate
+        yaw_rad,                // yaw setpoint (rad)
+        yaw_rate_rads);         // yaw rate setpoint (rad/s)
 #endif
 }
 

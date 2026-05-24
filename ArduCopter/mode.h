@@ -356,6 +356,12 @@ public:
 
         AC_AttitudeControl::HeadingCommand get_heading();
 
+        // get_reported_heading(): returns the last-computed yaw target without
+        // the side-effects of get_heading(), for use in telemetry (e.g.
+        // POSITION_TARGET_LOCAL_NED). heading_mode reflects whether the active
+        // yaw mode is commanding an angle, a rate, or both.
+        AC_AttitudeControl::HeadingCommand get_reported_heading() const;
+
     private:
 
         // yaw_rad(): main product of AutoYaw; the heading:

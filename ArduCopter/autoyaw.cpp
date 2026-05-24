@@ -326,6 +326,36 @@ float Mode::AutoYaw::rate_rads()
     return _yaw_rate_rads;
 }
 
+// returns the last-computed yaw target for telemetry reporting, without the
+// side-effects of get_heading() (which processes pilot input, runs the
+// weathervane and may change the yaw mode)
+AC_AttitudeControl::HeadingCommand Mode::AutoYaw::get_reported_heading() const
+{
+    AC_AttitudeControl::HeadingCommand heading;
+    heading.yaw_angle_rad = _yaw_angle_rad;
+    heading.yaw_rate_rads = _yaw_rate_rads;
+
+    switch (_mode) {
+        case Mode::HOLD:
+        case Mode::RATE:
+        case Mode::PILOT_RATE:
+        case Mode::WEATHERVANE:
+            heading.heading_mode = AC_AttitudeControl::HeadingMode::Rate_Only;
+            break;
+        case Mode::LOOK_AT_NEXT_WP:
+        case Mode::ROI:
+        case Mode::FIXED:
+        case Mode::LOOK_AHEAD:
+        case Mode::RESET_TO_ARMED_YAW:
+        case Mode::ANGLE_RATE:
+        case Mode::CIRCLE:
+            heading.heading_mode = AC_AttitudeControl::HeadingMode::Angle_And_Rate;
+            break;
+    }
+
+    return heading;
+}
+
 AC_AttitudeControl::HeadingCommand Mode::AutoYaw::get_heading()
 {
     // process pilot's yaw input
